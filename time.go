@@ -2,6 +2,7 @@ package yagolib
 
 import (
 	"bytes"
+	//	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -43,7 +44,6 @@ func GetTimeCtlStatus() (*TimeCtlStatus, error) {
 				}
 			}
 		}
-		//line = "      RTC time: Sat 2015-11-14 19:20:38"
 		if strings.Contains(line, "RTC time") && !strings.Contains(line, "n/a") {
 			i := strings.Index(line, ":")
 			if i > 0 {
@@ -55,18 +55,47 @@ func GetTimeCtlStatus() (*TimeCtlStatus, error) {
 				}
 			}
 		}
-		if strings.Contains(line, "RTC in local TZ") && strings.Contains(line, "yes") {
+		if strings.Contains(line, "RTC in local TZ: yes") {
 			status.IsRTCInLocalTZ = true
 		}
-		if strings.Contains(line, "Network time on") && strings.Contains(line, "yes") {
+		if strings.Contains(line, "Network time on: yes") {
 			status.IsNetworkTimeOn = true
 		}
-		if strings.Contains(line, "NTP synchronized") && strings.Contains(line, "yes") {
+		if strings.Contains(line, "NTP synchronized: yes") {
 			status.IsNTPSynchronized = true
 		}
 	}
-
 	if status.IsRTCInLocalTZ {
+		tz, _ := time.Now().Zone()
+		s := status.RTCTime.Format("Mon 2006-01-02 15:04:05 " + tz)
+		status.RTCTime, _ = time.Parse("Mon 2006-01-02 15:04:05 MST", s)
+	}
+
+	out.Reset()
+	cmd = exec.Command("systemctl", "status", "systemd-timesyncd")
+	cmd.Stdout = &out
+	err = cmd.Run()
+	if err != nil {
+		return nil, err
+	}
+	outStr = out.String()
+	outLines = strings.Split(outStr, "\n")
+	for _, line := range outLines {
+		if strings.Contains(line, "Loaded: loaded") {
+			status.IsLoaded = true
+		}
+		if strings.Contains(line, "Active: active") {
+			status.IsActive = true
+		}
+		if strings.Contains(line, "Status") {
+			i := strings.Index(line, ":")
+			if i > 0 {
+				status.Status = strings.Trim(line[i+1:], " \"")
+			}
+		}
+		if strings.Contains(line, "Started Network Time Synchronization") {
+
+		}
 	}
 
 	return &status, nil
