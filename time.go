@@ -2,7 +2,7 @@ package yagolib
 
 import (
 	"bytes"
-	//	"fmt"
+	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -86,6 +86,17 @@ func GetTimeCtlStatus() (*TimeCtlStatus, error) {
 		}
 		if strings.Contains(line, "Active: active") {
 			status.IsActive = true
+			if status.StartedAt.IsZero() {
+				i := strings.Index(line, "since")
+				if i > 0 {
+					parseFmt := "Mon 2006-01-02 15:04:05 MST"
+					str := strings.TrimSpace(line[i+5 : i+6+len(parseFmt)])
+					t, err := time.Parse(parseFmt, str)
+					if err == nil {
+						status.StartedAt = t
+					}
+				}
+			}
 		}
 		if strings.Contains(line, "Status") {
 			i := strings.Index(line, ":")
@@ -93,8 +104,30 @@ func GetTimeCtlStatus() (*TimeCtlStatus, error) {
 				status.Status = strings.Trim(line[i+1:], " \"")
 			}
 		}
-		if strings.Contains(line, "Started Network Time Synchronization") {
-
+		if status.StartedAt.IsZero() &&
+			strings.Contains(line, "Started Network Time Synchronization") {
+			now := time.Now()
+			loc := now.Location()
+			s := fmt.Sprint(line[:16], now.Year())
+			t, err := time.ParseInLocation("Jan 02 15:04:05 2006", s, loc)
+			if err == nil {
+				if t.After(now) {
+					t = time.Date(now.Year()-1, t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, loc)
+				}
+				status.StartedAt = t
+			}
+		}
+		if strings.Contains(line, "Synchronized to time server") {
+			now := time.Now()
+			loc := now.Location()
+			s := fmt.Sprint(line[:16], now.Year())
+			t, err := time.ParseInLocation("Jan 02 15:04:05 2006", s, loc)
+			if err == nil {
+				if t.After(now) {
+					t = time.Date(now.Year()-1, t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, loc)
+				}
+				status.SynchronizedAt = t
+			}
 		}
 	}
 
