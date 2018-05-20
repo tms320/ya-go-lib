@@ -3,6 +3,7 @@ package yagolib
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"os/exec"
 	"strings"
 	"time"
@@ -132,4 +133,26 @@ func GetTimeCtlStatus() (*TimeCtlStatus, error) {
 	}
 
 	return &status, nil
+}
+
+func GetUpTime() (time.Time, time.Duration) {
+	/* Possible methods:
+	uptime
+		08:11:22 up 34 min, 3 users, load average: 0.28, 0.45, 0.38
+		10:03:31 up 12:58,  3 users,  load average: 0.00, 0.00, 0.00
+		10:04:50 up 3 days, 19:41,  1 user,  load average: 1.81, 0.85, 0.34
+		08:11:22 up 146 days, 34 min, 3 users, load average: 0.28, 0.45, 0.38
+		08:11:22 up 1004 days, 12:20, 3 users, load average: 0.28, 0.45, 0.38
+	uptime -s
+		2018-05-16 14:23:07
+	uptime -p
+		up 13 hours, 10 minutes
+		up 3 days, 19 hours, 52 minutes
+	cat /proc/uptime
+		1229.64 4117.92 (first number is the seconds from startup)
+	*/
+	b, _ := ioutil.ReadFile("/proc/uptime")
+	s := strings.Split(string(b), " ")[0]
+	d, _ := time.ParseDuration(s + "s")
+	return time.Now().Add(-d), d
 }
