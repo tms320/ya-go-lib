@@ -13,6 +13,7 @@ func Exit(err error) {
 	os.Exit(0)
 }
 
+/*
 func StdErrPrint(a ...interface{}) {
 	fmt.Fprint(os.Stderr, a)
 }
@@ -24,3 +25,4 @@ func StdErrPrintln(a ...interface{}) {
 func StdErrPrintf(format string, a ...interface{}) {
 	fmt.Fprintf(os.Stderr, format, a)
 }
+*/
