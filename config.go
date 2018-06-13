@@ -12,30 +12,29 @@ import (
 
 // LoadConfig loads and parses configuration file(s) in TOML format:
 // https://github.com/toml-lang/toml
-// Command line arguments are parsed too if necessary.
-// Configuration data will be copied to 'config' structure in the following order:
+// Command line arguments may be parsed too if necessary.
+// Configuration will be copied from data sources to the structure pointed by 'config' in the following order:
 // 1. From 'homeConfigName' file in the '~/.config/appName' directory (appName - name of application executable).
-// 2. 'configPath' file.
-// 3. Command line arguments.
-// So 'homeConfigName' file has the lowest priority. It's settings can be overridden by 'configPath' file.
+// 2. From 'configPath' file.
+// 3. From command line arguments given by 'cmdLine' string array.
+// So 'homeConfigName' file has the lowest priority. It's settings will be overridden by 'configPath' file.
 // Command line arguments have top priority and will override data from 'configPath' file.
-// You may omit any config data source (just use empty string for homeConfigName/configPath).
-// If you want to parse command line flags, the fields of target 'config' structure may
-// have struct `tags` which define alternative name and description of flag like this:
+// You may omit any config data source, just use empty string for 'homeConfigName'/'configPath' and 'nil' for 'cmdLine'.
+// The names of command line flags must exactly match the names of 'config' structure fields.
+// The fields of 'config' structure may have optional `tag` which define description of flag.
+// For the following structure:
 // type configStruct struct {
-//	  Param1   int `param_1: Parameter number One`
+//	  Param1   int `Parameter number One`
 // }
-// So you can pass to command line the following variants of flag name:
-// -Param1=35 or -param1=35 or -param_1=35
-func LoadConfig(config interface{}, homeConfigName string, configPath string, parseCmdLine bool, verbose bool) {
+// You can pass to command line the following flag: -Param1=35 (not -param1=35).
+// The function returns '*flag.FlagSet' if 'cmdLine' was set and 'error'.
+func LoadConfig(config interface{}, homeConfigName string, configPath string, cmdLine []string, verbose bool) (*flag.FlagSet, error) {
 	if config == nil {
-		fmt.Fprintln(os.Stderr, "Error: target 'config' structure is 'nil'")
-		return
+		return nil, fmt.Errorf("Error: 'config' structure pointer is 'nil'")
 	}
 	configType := reflect.TypeOf(config)
-	if configType.Kind() != reflect.Ptr {
-		fmt.Fprintln(os.Stderr, "Error: target 'config' structure is not a pointer. It has type: ", configType)
-		return
+	if (configType.Kind() != reflect.Ptr) || (configType.Elem().Kind() != reflect.Struct) {
+		return nil, fmt.Errorf("Error: 'config' argument is not a pointer to structure. It has type: %v", configType)
 	}
 
 	if homeConfigName != "" {
@@ -73,8 +72,27 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, pa
 		}
 	}
 
-	if parseCmdLine {
-		flag.Parse()
+	if cmdLine != nil {
+		flagSet := flag.NewFlagSet("cmdLine", flag.ContinueOnError)
+		structValue := reflect.ValueOf(config).Elem()
+		structType := structValue.Type()
+		for i := 0; i < structType.NumField(); i++ {
+			field := structType.Field(i)
+			fieldValue := structValue.Field(i)
+			fieldName := field.Name //RemoveCharacters(field.Name, "-_")
+			//fieldTag := string(field.Tag)
+			switch fieldValue.Kind() {
+			case reflect.Int:
+				flagSet.Int(fieldName, int(fieldValue.Int()), "")
+				fmt.Println(fieldName, "Default:", fieldValue.Int())
+			}
+		}
+		err := flagSet.Parse(cmdLine)
+		flagSet.Visit(func(f *flag.Flag) {
+			fmt.Println(f.Name, "=", f.Value)
+		})
+		return flagSet, err
 	}
+	return nil, nil
 
 }
