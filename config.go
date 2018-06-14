@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -20,6 +21,7 @@ import (
 // So 'homeConfigName' file has the lowest priority. It's settings will be overridden by 'configPath' file.
 // Command line arguments have top priority and will override data from 'configPath' file.
 // You may omit any config data source, just use empty string for 'homeConfigName'/'configPath' and 'nil' for 'cmdLine'.
+// The fields of target 'config' structure must be exported.
 // The names of command line flags must exactly match the names of 'config' structure fields.
 // The fields of 'config' structure may have optional `tag` which define description of flag.
 // For the following structure:
@@ -30,30 +32,32 @@ import (
 // The function returns '*flag.FlagSet' if 'cmdLine' was set and 'error'.
 func LoadConfig(config interface{}, homeConfigName string, configPath string, cmdLine []string, verbose bool) (*flag.FlagSet, error) {
 	if config == nil {
-		return nil, fmt.Errorf("Error: 'config' structure pointer is 'nil'")
+		return nil, fmt.Errorf("'config' structure pointer is 'nil'")
 	}
 	configType := reflect.TypeOf(config)
 	if (configType.Kind() != reflect.Ptr) || (configType.Elem().Kind() != reflect.Struct) {
-		return nil, fmt.Errorf("Error: 'config' argument is not a pointer to structure. It has type: %v", configType)
+		return nil, fmt.Errorf("'config' argument is not a pointer to structure. It has type: %v", configType)
 	}
 
+	var errMsg string
+
+	appName := filepath.Base(os.Args[0])
+
 	if homeConfigName != "" {
-		exePath, err := os.Executable()
-		if err == nil {
-			appName := filepath.Base(exePath)
-			homeConfigPath := filepath.Join("~/.config", appName, homeConfigName)
-			homeConfigPath, err = NormalizePath(homeConfigPath)
-			if (err == nil) && IsFileExists(homeConfigPath) {
-				if verbose {
-					fmt.Printf("Loading config from '%v'\n", homeConfigPath)
-				}
-				if _, err = toml.DecodeFile(homeConfigPath, config); (err != nil) && verbose {
-					fmt.Fprintf(os.Stderr, "Error parsing config file '%v':\n", homeConfigPath)
-					fmt.Fprint(os.Stderr, err)
-				}
-			} else if verbose {
-				fmt.Fprintf(os.Stderr, "Config file '%v' not found\n", homeConfigPath)
+		homeConfigPath := filepath.Join("~/.config", appName, homeConfigName)
+		homeConfigPath, err := NormalizePath(homeConfigPath)
+		if (err == nil) && IsFileExists(homeConfigPath) {
+			if verbose {
+				fmt.Printf("Loading config from '%v'\n", homeConfigPath)
 			}
+			if _, err = toml.DecodeFile(homeConfigPath, config); err != nil {
+				errMsg = fmt.Sprintf("Error parsing config file '%v':\n%v\n", homeConfigPath, err)
+				if verbose {
+					fmt.Fprint(os.Stderr, errMsg)
+				}
+			}
+		} else if verbose {
+			fmt.Fprintf(os.Stderr, "Config file '%v' not found\n", homeConfigPath)
 		}
 	}
 
@@ -63,36 +67,63 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, cm
 			if verbose {
 				fmt.Printf("Loading config from '%v'\n", configPath)
 			}
-			if _, err = toml.DecodeFile(configPath, config); (err != nil) && verbose {
-				fmt.Fprintf(os.Stderr, "Error parsing config file '%v':\n", configPath)
-				fmt.Fprint(os.Stderr, err)
+			if _, err = toml.DecodeFile(configPath, config); err != nil {
+				msg := fmt.Sprintf("Error parsing config file '%v':\n%v\n", configPath, err)
+				errMsg += msg
+				if verbose {
+					fmt.Fprint(os.Stderr, msg)
+				}
 			}
 		} else if verbose {
 			fmt.Fprintf(os.Stderr, "Config file '%v' not found\n", configPath)
 		}
 	}
 
+	var flagSet *flag.FlagSet
 	if cmdLine != nil {
-		flagSet := flag.NewFlagSet("cmdLine", flag.ContinueOnError)
+		flagSet = flag.NewFlagSet(appName, flag.ContinueOnError)
 		structValue := reflect.ValueOf(config).Elem()
 		structType := structValue.Type()
 		for i := 0; i < structType.NumField(); i++ {
-			field := structType.Field(i)
 			fieldValue := structValue.Field(i)
-			fieldName := field.Name //RemoveCharacters(field.Name, "-_")
-			//fieldTag := string(field.Tag)
+			if !fieldValue.CanSet() {
+				continue
+			}
+			fieldAddr := fieldValue.Addr().Interface()
+			field := structType.Field(i)
+			fieldName := field.Name
+			fieldTag := string(field.Tag)
 			switch fieldValue.Kind() {
+			case reflect.Bool:
+				flagSet.Bool(fieldName, fieldValue.Bool(), fieldTag)
+			case reflect.Float32:
+				flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
+			case reflect.Float64:
+				flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
 			case reflect.Int:
-				flagSet.Int(fieldName, int(fieldValue.Int()), "")
-				fmt.Println(fieldName, "Default:", fieldValue.Int())
+				//flagSet.Int(fieldName, int(fieldValue.Int()), fieldTag)
+				flagSet.IntVar(fieldAddr.(*int), fieldName, int(fieldValue.Int()), fieldTag)
+			case reflect.Int64:
+				flagSet.Int64(fieldName, fieldValue.Int(), fieldTag)
+			case reflect.String:
+				flagSet.String(fieldName, fieldValue.String(), fieldTag)
 			}
 		}
-		err := flagSet.Parse(cmdLine)
+		if err := flagSet.Parse(cmdLine); err != nil {
+			msg := fmt.Sprintf("Error parsing command line:\n%v\n", err)
+			errMsg += msg
+			if verbose {
+				fmt.Fprint(os.Stderr, msg)
+			}
+		}
+
 		flagSet.Visit(func(f *flag.Flag) {
 			fmt.Println(f.Name, "=", f.Value)
 		})
-		return flagSet, err
 	}
-	return nil, nil
 
+	if errMsg == "" {
+		return flagSet, nil
+	}
+	return flagSet, fmt.Errorf(strings.TrimRight(errMsg, "\n"))
 }
