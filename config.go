@@ -21,7 +21,7 @@ import (
 // So 'homeConfigName' file has the lowest priority. It's settings will be overridden by 'configPath' file.
 // Command line arguments have top priority and will override data from 'configPath' file.
 // You may omit any config data source, just use empty string for 'homeConfigName'/'configPath' and 'nil' for 'cmdLine'.
-// The fields of target 'config' structure must be exported.
+// The fields of 'config' structure must be exported.
 // The names of command line flags must exactly match the names of 'config' structure fields.
 // The fields of 'config' structure may have optional `tag` which define description of flag.
 // For the following structure:
@@ -81,15 +81,12 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, cm
 
 	var flagSet *flag.FlagSet
 	if cmdLine != nil {
+		var tomlStr string
 		flagSet = flag.NewFlagSet(appName, flag.ContinueOnError)
 		structValue := reflect.ValueOf(config).Elem()
 		structType := structValue.Type()
 		for i := 0; i < structType.NumField(); i++ {
 			fieldValue := structValue.Field(i)
-			if !fieldValue.CanSet() {
-				continue
-			}
-			fieldAddr := fieldValue.Addr().Interface()
 			field := structType.Field(i)
 			fieldName := field.Name
 			fieldTag := string(field.Tag)
@@ -101,8 +98,7 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, cm
 			case reflect.Float64:
 				flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
 			case reflect.Int:
-				//flagSet.Int(fieldName, int(fieldValue.Int()), fieldTag)
-				flagSet.IntVar(fieldAddr.(*int), fieldName, int(fieldValue.Int()), fieldTag)
+				flagSet.Int(fieldName, int(fieldValue.Int()), fieldTag)
 			case reflect.Int64:
 				flagSet.Int64(fieldName, fieldValue.Int(), fieldTag)
 			case reflect.String:
@@ -116,10 +112,17 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, cm
 				fmt.Fprint(os.Stderr, msg)
 			}
 		}
-
 		flagSet.Visit(func(f *flag.Flag) {
-			fmt.Println(f.Name, "=", f.Value)
+			keyVal := fmt.Sprintf("%v = %v\n", f.Name, f.Value)
+			tomlStr += keyVal
 		})
+		if _, err := toml.Decode(tomlStr, config); err != nil {
+			msg := fmt.Sprintf("Error parsing command line:\n%v\n", err)
+			errMsg += msg
+			if verbose {
+				fmt.Fprint(os.Stderr, msg)
+			}
+		}
 	}
 
 	if errMsg == "" {
