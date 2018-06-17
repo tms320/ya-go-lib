@@ -1,7 +1,7 @@
 package yagolib
 
 import (
-	"flag"
+	//"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,21 +22,14 @@ import (
 // Command line arguments have top priority and will override data from 'configPath' file.
 // You may omit any config data source, just use empty string for 'homeConfigName'/'configPath' and 'nil' for 'cmdLine'.
 // The fields of 'config' structure must be exported.
-// The names of command line flags must exactly match the names of 'config' structure fields.
-// The fields of 'config' structure may have optional `tag` which define description of flag.
-// For the following structure:
-// type configStruct struct {
-//	  Param1   int `Parameter number One`
-// }
-// You can pass to command line the following flag: -Param1=35 (not -param1=35).
-// The function returns '*flag.FlagSet' if 'cmdLine' was set and 'error'.
-func LoadConfig(config interface{}, homeConfigName string, configPath string, cmdLine []string, verbose bool) (*flag.FlagSet, error) {
+// The names of command line arguments must exactly match the names of 'config' structure fields.
+func LoadConfig(config interface{}, homeConfigName string, configPath string, cmdLine []string, verbose bool) error {
 	if config == nil {
-		return nil, fmt.Errorf("'config' structure pointer is 'nil'")
+		return fmt.Errorf("'config' structure pointer is 'nil'")
 	}
 	configType := reflect.TypeOf(config)
 	if (configType.Kind() != reflect.Ptr) || (configType.Elem().Kind() != reflect.Struct) {
-		return nil, fmt.Errorf("'config' argument is not a pointer to structure. It has type: %v", configType)
+		return fmt.Errorf("'config' argument is not a pointer to structure. It has type: %v", configType)
 	}
 
 	var errMsg string
@@ -79,43 +72,57 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, cm
 		}
 	}
 
-	var flagSet *flag.FlagSet
+	//var flagSet *flag.FlagSet
 	if cmdLine != nil {
 		var tomlStr string
-		flagSet = flag.NewFlagSet(appName, flag.ContinueOnError)
-		structValue := reflect.ValueOf(config).Elem()
-		structType := structValue.Type()
-		for i := 0; i < structType.NumField(); i++ {
-			fieldValue := structValue.Field(i)
-			field := structType.Field(i)
-			fieldName := field.Name
-			fieldTag := string(field.Tag)
-			switch fieldValue.Kind() {
-			case reflect.Bool:
-				flagSet.Bool(fieldName, fieldValue.Bool(), fieldTag)
-			case reflect.Float32:
-				flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
-			case reflect.Float64:
-				flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
-			case reflect.Int:
-				flagSet.Int(fieldName, int(fieldValue.Int()), fieldTag)
-			case reflect.Int64:
-				flagSet.Int64(fieldName, fieldValue.Int(), fieldTag)
-			case reflect.String:
-				flagSet.String(fieldName, fieldValue.String(), fieldTag)
+		/*
+			flagSet = flag.NewFlagSet(appName, flag.ContinueOnError)
+			structValue := reflect.ValueOf(config).Elem()
+			structType := structValue.Type()
+			for i := 0; i < structType.NumField(); i++ {
+				fieldValue := structValue.Field(i)
+				field := structType.Field(i)
+				fieldName := field.Name
+				fieldTag := string(field.Tag)
+				switch fieldValue.Kind() {
+				case reflect.Bool:
+					flagSet.Bool(fieldName, fieldValue.Bool(), fieldTag)
+				case reflect.Float32:
+					flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
+				case reflect.Float64:
+					flagSet.Float64(fieldName, fieldValue.Float(), fieldTag)
+				case reflect.Int:
+					flagSet.Int(fieldName, int(fieldValue.Int()), fieldTag)
+				case reflect.Int64:
+					flagSet.Int64(fieldName, fieldValue.Int(), fieldTag)
+				case reflect.String:
+					flagSet.String(fieldName, fieldValue.String(), fieldTag)
+				case reflect.Uint:
+					flagSet.Uint(fieldName, uint(fieldValue.Uint()), fieldTag)
+				case reflect.Uint64:
+					flagSet.Uint64(fieldName, fieldValue.Uint(), fieldTag)
+				}
 			}
-		}
-		if err := flagSet.Parse(cmdLine); err != nil {
-			msg := fmt.Sprintf("Error parsing command line:\n%v\n", err)
-			errMsg += msg
-			if verbose {
-				fmt.Fprint(os.Stderr, msg)
+			if err := flagSet.Parse(cmdLine); err != nil {
+				msg := fmt.Sprintf("Error parsing command line:\n%v\n", err)
+				errMsg += msg
+				if verbose {
+					fmt.Fprint(os.Stderr, msg)
+				}
 			}
+			flagSet.Visit(func(f *flag.Flag) {
+				keyVal := fmt.Sprintf("%v = %v\n", f.Name, f.Value)
+				tomlStr += keyVal
+			})
+		*/
+		for _, arg := range cmdLine {
+			tomlStr += strings.TrimLeft(arg, "-") + "\n"
 		}
-		flagSet.Visit(func(f *flag.Flag) {
-			keyVal := fmt.Sprintf("%v = %v\n", f.Name, f.Value)
-			tomlStr += keyVal
-		})
+		tomlStr = strings.TrimRight(tomlStr, "\n")
+		if verbose {
+			fmt.Println("Command line parameters:")
+			fmt.Println(tomlStr)
+		}
 		if _, err := toml.Decode(tomlStr, config); err != nil {
 			msg := fmt.Sprintf("Error parsing command line:\n%v\n", err)
 			errMsg += msg
@@ -126,7 +133,7 @@ func LoadConfig(config interface{}, homeConfigName string, configPath string, cm
 	}
 
 	if errMsg == "" {
-		return flagSet, nil
+		return nil
 	}
-	return flagSet, fmt.Errorf(strings.TrimRight(errMsg, "\n"))
+	return fmt.Errorf(strings.TrimRight(errMsg, "\n"))
 }
