@@ -1,0 +1,5 @@
+@echo ff
+cls
+go test -coverprofile=coverage.out
+go tool cover -func=coverage.out
+pause
